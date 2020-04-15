@@ -1,0 +1,7 @@
+#Copyright (c) 2019 Raytheon BBN Technologies, Inc. All Rights Reserved.
+ABS_SRC = -fdebug-prefix-map=src=$(shell readlink -f src)
+ABS_GEN_SRC = -fdebug-prefix-map=gen_src=$(shell readlink -f gen_src)
+ABS_DOT = -fdebug-prefix-map=.=$(shell readlink -f .)
+
+CFLAGS = -g $(ABS_SRC) $(ABS_GEN_SRC) $(ABS_DOT) $(INCLUDES)
+CFLAGS_ASM = $(CFLAGS) -Wa,--noexecstack 

@@ -1,0 +1,12 @@
+#Copyright (c) 2019 Raytheon BBN Technologies, Inc. All Rights Reserved.
+**/*.o
+**/*.oS
+**/*.swp
+**/*.a
+**/lib/*
+**/*_stdin
+**/*_stdout
+**/*_stderr
+target/
+**/*.egg-info
+**/__pycache__
