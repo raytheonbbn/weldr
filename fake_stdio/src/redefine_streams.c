@@ -1,6 +1,9 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
 #include "redefine_streams.h"
 
 FILE* stdin = NULL;
@@ -11,6 +14,16 @@ char stdin_path[512];
 char stdout_path[512];
 char stderr_path[512];
 
+void fake_stdio_logerr(const char * msg) {
+    const char* err = strerror(errno);
+    // We can't use stderr, since we overrode it.
+    // However, we don't override the file descriptor,
+    // so we can bang our message out with write()
+    write(2, msg, strlen(msg));
+    write(2, err, strlen(err));
+    write(2, "\n", 2);
+}
+
 INIT_STUB(fake_stdio) {
 
     sprintf(stdin_path, "%s/%s_stdin", basedir, instance);
@@ -18,19 +31,24 @@ INIT_STUB(fake_stdio) {
     sprintf(stderr_path, "%s/%s_stderr", basedir, instance);
 
     int ret = 0;
+    int tmp = 0;
+    int c = 0;
     //Remove existing files
     if(ret = remove(stdin_path)) {
         if(errno != ENOENT) {
+            fake_stdio_logerr("Failed to clear stdin path: ");
             return 2;
         } 
     }
     if(ret = remove(stdout_path)) {
         if(errno != ENOENT) {
+            fake_stdio_logerr("Failed to clear stdout path: ");
             return 3;
         } 
     }
     if(ret = remove(stderr_path)) {
         if(errno != ENOENT) {
+            fake_stdio_logerr("Failed to clear stderr path: ");
             return 4;
         } 
     }
@@ -38,40 +56,19 @@ INIT_STUB(fake_stdio) {
     //Need to configure stdin separately; it should be a fifo, not a standard file.
     mode_t mode = 0666;
     if(mkfifo(stdin_path, mode)) {
-        write(1, "Bad stdin path: '", strlen("Bad stdin path: '"));
-        write(1, stdin_path, strlen(stdin_path));
-        write(1, "'\n", 1);
+        write(2, stdin_path, strlen(stdin_path));
+        fake_stdio_logerr(" failed mkfifo(): ");
         return 5;
     }
 
     int stdin_fd = open(stdin_path, O_RDWR | O_CLOEXEC); // TODO isn't working with O_NONBLOCK
     if(!stdin_fd) {
-        write(1, "BAD\n", strlen("BAD\n"));
+        write(2, stdin_path, strlen(stdin_path));
+        fake_stdio_logerr(" failed open(): ");
+         
         return 6;
     }
-
-    // TODO isn't working with NEW ADDITION code below
-    /******************* NEW ADDITION ****************************/
-    // To change access mode of file, must first use F_GETFL
-    /*int prev_fl = fcntl(stdin_fd, F_GETFL, 0);
-
-    if (prev_fl == -1) {
-        perror("Error with fcntl() call, prv_fl\n");
-        return 1;
-    }
-    
-    // Change flag to be BLOCKING
-    prev_fl &= ~O_NONBLOCK;
-
-    // Update FIFO to be BLOCKING
-    int cntl_check = fcntl(stdin_fd, F_SETFL, prev_fl);
-
-    if(cntl_check == -1) {
-        perror("Could not set FIFO to BLOCKING\n");
-        return 1;
-        }*/
-    /***********************************************************/
-    
+ 
     //Cheat way around fifo blocking; open for RW
     //Fortunately, this isn't a library meant to be developed against.    
     stdin=fdopen(stdin_fd, "rw"); 
@@ -79,12 +76,18 @@ INIT_STUB(fake_stdio) {
     stderr=fopen(stderr_path, "w");
 
     if(stdin == NULL) {
+        write(2, stdin_path, strlen(stdin_path));
+        fake_stdio_logerr(" failed fdopen(): ");
         return 7;
     }
     if(stdout == NULL) {
+        write(2, stdout_path, strlen(stdout_path));
+        fake_stdio_logerr(" failed fopen(): ");
         return 8;
     }
     if(stderr == NULL) {
+        write(2, stderr_path, strlen(stderr_path));
+        fake_stdio_logerr(" failed fopen(): ");
         return 9;
     }
 

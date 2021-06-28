@@ -1,6 +1,9 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
 #ifndef __PTHREAD_LAUNCH_H__
 #define __PTHREAD_LAUNCH_H__
 #include "pthread_shared.h"

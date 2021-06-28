@@ -25,3 +25,11 @@ None needed.  This just pokes a bunch of existing interfaces.
 ## Global Fields
 - **stdin/stdout/stderr:** These three FILE pointers override the symbols from stdio.h, allowing the symbol deconflictor to do its work.
 - **stdin\_path/stdout\_path/stderr\_path:** These store file paths that 
+
+----------
+Copyright (c) Raytheon BBN Technologies 2021, All Rights Reserved
+
+This document does not contain technology or Technical Data controlled under either
+the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+
+Distribution A: Approved for Public Release, Distribution Unlimited

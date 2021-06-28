@@ -1,118 +1,123 @@
-# Weldr
+# Weldr: Fusing linux executables, for science!
 
-## Overview
+## What does weldr do?
+The tool fuses a system of multiple executables into a single monolithic executable
+for analysis purposes.  
 
-Have you ever needed to debug a program, only to find that the code dives into a network socket and comes back with an unreadable error?  Weldr is here to help.
+When analyzing a binary, dynamic library calls and IPC create
+gaps in data and control flow that are difficult to bridge.  There are approaches
+to isolate a single binary and "patch" the holes left by the disconnected components.
+However, this approach makes analyzing a connected system difficult or impossible.
 
-Weldr solves the problem of analyzing a multi-program or distributed system by recompiling all software into a single executable.
+The tool takes a different approach.  It replaces dynamic library calls with
+statically-linked user-space code, and fuses all programs in the system
+into a single, monolithic executable.  The data paths of the entire system
+are traced explictly in the binary itself, allowing single-binary tools
+to examine the entire system.
 
-## Installation
+## How does weldr do it?
+The tool works all its magic in the linking phase of compilation.
 
-### Compatibility
+1) Hook Make to recover object files for each sub-program
+2) Add stub libraries for sub-program-specific modeling.
+3) Duplicate sub-programs to match a system specification doc. 
+4) Deconflic symbols between sub-program instances; each sub-program instance has its own namespace within the fused binary.
+5) Generate a driver object that configures the stub libraries, and launches each sub-program in its own thread.
+6) Apply wrapper libraries to redefine library calls shared across sub-program instances.
+7) Compile all the objects together into a single executable. 
 
-Weldr needs to be able to build the software it's processing.  Currently, that means it relies on having a locally-installed C and C++ compiler tool chain that it understands.
+## Requirements for target projects
+As said above, the tool hooks Make in order to recover object files and compiler configurations
+for each sub-program.  This means the make file needs to satisfy some requirements.
 
-Weldr is tested against the standard C developer tools
-on Fedora 29 and CentOS 7.  It should also be compatible
-with Ubuntu 18.04 and other similarly-recent GNU linux distributions.
+- The final compilation step for binaries or libraries must use the default variables, such as $(CC).
+    The tool replaces these commands with hook scripts.
 
-Because of fundamental differences in build tools,
-binary formats, and library architecture, Weldr currently will not work on non-linux platforms, including Mac OS X and Windows.
+The tool has been expanded to understand libtools-based builds.  Libtools is really just an extension of Make,
+so the same rules apply.
 
-It is unknown if BSD variants and other non-GNU linux environments are similar enough to support Weldr.  Please feel free to try, but no guarantees.
+## Installing Weldr
 
-### Before you Begin
+### Dependencies 
 
-Weldr needs Python 3.7 or later to run, and a compatible version of pip to install.
+NOTE: Weldr is only tested on the Fedora and Ubuntu Linux distributions.
+It should work on other GNU/Linux platforms, but no guarantees.
 
-- **Fedora:** `sudo dnf install python3 pip3`
-- **Ubuntu:** `sudo apt install python3 python3-pip`
-- **CentOS 7:** Python 3.7 is not available from yum.  Install manually. 
+To install and run the code, you need the following:
 
-Currently, the weldr package is only set up for a development installation.  It is strongly recommended that you install it within a python virtual environment: 
+- Bash 4.1 or later
+- Python 3.6 or later
+- pip
+- virtualenv (strongly recommended)
+
+To actually weld binaries, weldr needs a Linux C/C++ development environment.
+Many distributions have a package or package group that includes everything weldr needs:
+
+- **Fedora:** `sudo dnf -y group install "C Development Tools and Libraries"` 
+- **CentOS:** `sudo yum groupinstall -y "Development Tools"`
+- **Ubuntu:** `sudo apt install build-essentials`
+
+Finally, weldr relies on a companion tool - Torch - to rewrite object files.
+You can clone Torch from [https://github.com/raytheonbbn/torch.git](https://github.com/raytheonbbn/torch.git).
+
+### Installation
+
+Weldr itself is a python package.  Currently, it is only configured for development installation.
+It is strongly recommened that you install weldr within a python 3 virtual environment:
 
 [https://docs.python-guide.org/dev/virtualenvs/](https://docs.python-guide.org/dev/virtualenvs/)
 
-### Installation Process
+The recommended steps are as follows.
 
-1. Make sure the C/C++ developer tools are installed.
-	- **Fedora and CentOS:** Execute `sudo setup.sh`.  This will do the work for you.
-	- **Ubuntu:** Execute the following:
-		- `sudo apt update`
-		- `sudo apt install build-essential`
-	- **Other Linux:** Find and install an equivalent package or set of packages, according to the package manager on your system.
-2. Make sure `torch` is installed.  See separate git project: 
-3. Install the package:
-	- **In a Python 3 virtualenv:** `python setup.py develop`
-	- **Bare Metal (NOT TESTED):** `sudo python3 setup.py develop`
+- Install platform dependencies
+- Create and activate a Python 3 virtual environment
+- Install Torch (it is also a python package)
+- From the top-level directory of the weldr repository, execute `python setup.py develop`.
 
-You're done!  Have fun welding systems together!
+Once complete, check that the model libraries build correctly on your system:
 
-## Using Weldr
+- Find each directory containing a `Makefile`.
+- From within each directory, execute `make clean all`.  This should complete successfuly.
 
-### Input Projects
+## Running the Tool
 
-To weld programs into a single binary, weldr needs to hook the build process for each executable that will be integrated into the final binary.
+The weldr package exposes a command-line interface:
 
-An input "project" for weldr is a directory where you can build the project by executing `make`.  
+weldr [OPTIONS] -s SYSTEM_DEF -t WORKING_DIR PROJECT_DIR [PROJECT_DIR...]
 
-**NOTE:** Weldr hooks the make process by overriding the make automatic variables `CC` and `CXX`.  If the Makefile targets do not use these variables, weldr will not capture everything it needs.  Also, if you rely on a custom setting for one or both of these variables, weldr may override them with incorrect values.
+**Required Options:**
 
-### System Definition File
+- `-s SYSTEM_DEF`: Path to a system definition file.  
+- `-t WORKING_DIR`: Path for weldr to use as a working directory.  The directory will be created if it doesn't exist, and overwritten if it does.
+- `PROJECT_DIR`: Build directory for one project to be included in the welded binary (the one containing the top-level Makefile)
 
-Weldr needs user input to tell it which executables
-from the input projects should become sub-programs within the welded binary, and how they should
-be executed.
+**Some Optional Options:**
 
-The current system definition format is much like a simplified scripting language:
+- `-v`: Turn on debug logging.  This also includes the output of Make or Torch.
+- `-L LOG_FILE`: Print debug log output to LOG_FILE.
+- `-S`: Turn on Safe Mode.  This executes every stage of weldr in a separate working directory, and saves internal state so you can restart the tool from an intermediate stage.
+- `--start-stage NAME`: Start weldr at stage NAME, rather than from the beginning.  This requires successfully running all predicessor stages with Safe Mode enabled, and the same working directory.
+- `--stop-stage NAME`: Stop weldr after stage NAME, rather than allowing it to run to completion.
 
-- Each line must be a command, a comment, or blank.
-- A command must be the name of an executable from one of the input projects.
-- Comment lines start with `#`, as in shell scripting.
+For a complete list of options, execute `weldr -h`.
 
-Commands are launched in separate threads in the order in which they are defined.
+### The System Definition File
 
-This format may be expanded in the future to include default arguments and IPC configurations like IP addresses or stream redirection.
+As mentioned above, weldr needs you to give it a system specification telling it which programs to run,
+the order in which they should be launched, and any default command line arguments for each.
 
-### Running Weldr
+The document looks a lot like a shell script; each line takes the following form:
 
-Weldr exposes the following command line interface:
+`[PRIMARY] command [arg...]`
 
-	weldr [options] -t path -s path project [--] [project ...]
-
-**Required Arguments:**
-
-- `-t path` Path to a working directory.  Weldr creates a lot of temporary files, so giving it a clean directory is advisable.  Weldr will create the working directory if it doesn't exist, and overwrite it if it does.
-- `-s path` Path to the system definition file.
-- `project` Path to the directory containing a make-based project to use as input.  You can specify more than one such path; weldr will process all of them.
-
-**Useful Options:**
-
-- `-D` Enable dynamic library modeling.  If any sub-program depends on a dynamic library higher up the chain than libc, you will need to specify this.
-- `-S` Safe mode.  Weldr is broken up into multiple stages.  In safe mode, weldr will create a new working directory for each stage, with the stage name appended to the name you provided in the `-t` option.  The final results will be in `<dir_name>_compile`
-
-### Running the Welded Binary
-
-If weldr succeeds, it will produce a single binary named `run_me` in the working directory.  Running this binary will launch each subprogram in a separate thread.
-
- Running works a little differently than a normal program.  For full details, execute `./run_me --help`.  The help message will include usage information customized to the particular binary, including the names of the subprograms.
-
-**WARNING:** If dynamically-linked, the welded binary depends on the working directory it was produced in for custom libraries.  Do not delete the working directory.
-
-#### Standard Streams
-
-Because a welded binary contains multiple programs all expecting sole access to stdin, stdout, and stderr, weldr redirects the streams for each subprogram into a separate file.  
-
-These files are, by default, put in `/tmp`, and are named `<subprogram name>_<stream name>`
-
-You can change the directory via the command line.  See the output of `--help` for more info.
-
-#### Command Line Args
-
-As with standard streams, each subprogram expects its own argv.  Weldr provides this by exposing an option `--<subprogram name>-args` for each subprogram.  The arguments must be presented in a comma-separated list.  Again, see the output of `--help` for specific details.
-
+- `PRIMARY`: This keyword designates a subprocess as the primary; if it exits, the entire program should terminate, rather than waiting for all subprograms to exit.  You can only specify one primary subprogram per configuration.
+ `command`: A program from one of the projects getting welded.  This should be the path to the executable relative to the project build directory, minus the leading `./`.
+ - `arg`: After `command`, you can include a series of space-separate arguments.  These will get passed as `argv` to the subprogram when the welded binary runs. Alternatively, you can leave these blank, and use the welded binary's CLI to provide `argv` for each subprogram. 
 
 ----------
+Copyright (c) Raytheon BBN Technologies 2021, All Rights Reserved
 
+This document does not contain technology or Technical Data controlled under either
+the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
 
-Copyright (c) Raytheon BBN Technologies 2020, All Rights Reserved.
+Distribution A: Approved for Public Release, Distribution Unlimited

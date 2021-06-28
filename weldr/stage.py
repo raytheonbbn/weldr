@@ -1,6 +1,9 @@
 # Copyright (c) 2020 Raytheon BBN Technologies, Inc.  All Rights Reserved.
+#
 # This document does not contain technology or Technical Data controlled under either
-# the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+# the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+#
+# Distribution A: Approved for Public Release, Distribution Unlimited
 import logging
 import pathlib
 import pickle
@@ -14,12 +17,9 @@ class Stage:
         
         if self.args.safe_mode:
             self.working_dir = pathlib.Path(self.args.temp_dir + "_" + self.name)
-        else:
-            self.working_dir = pathlib.Path(self.args.temp_dir)
-
-        if self.args.save_results:
             self.results_file = self.working_dir / 'results.pickle'
         else:
+            self.working_dir = pathlib.Path(pathlib.Path.cwd() / self.args.temp_dir)
             self.results_file = None
 
     @property

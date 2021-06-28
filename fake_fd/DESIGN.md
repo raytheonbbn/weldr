@@ -31,3 +31,11 @@ All of these are defined in include/fake\_fd.h
 ## Global Fields
 
 - **mgr\_for\_fds:** This is the global instance of fd\_mgr.  NOTE: It's named oddly because the static linker will happily merge all symbols named "mgr" from the input objects, and the resulting binary will happily run with it until something realizes one of the two structs' mebers gets corrupted.  If you create your own implementation library, name its manager something similarly unique.
+
+----------
+Copyright (c) Raytheon BBN Technologies 2021, All Rights Reserved
+
+This document does not contain technology or Technical Data controlled under either
+the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+
+Distribution A: Approved for Public Release, Distribution Unlimited

@@ -1,6 +1,9 @@
 # Copyright (c) 2020 Raytheon BBN Technologies, Inc.  All Rights Reserved.
+#
 # This document does not contain technology or Technical Data controlled under either
-# the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+# the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+#
+# Distribution A: Approved for Public Release, Distribution Unlimited
 import pathlib
 
 from ..argdef import ArgDef
@@ -32,15 +35,18 @@ class MakeStage(Stage):
         return frozenset(["init"])
 
     def run(self):
-        
+        if(self.args.coverage):
+            gcov='-fprofile-arcs -ftest-coverage '
+        else:
+            gcov='' #prevent screaming about missing variable
         for d in self.args.projects:
             self.l.info("Handling project at {:s}".format(d))
             self.l.debug("Extra make arguments: {!s}".format(self.args.make_args))
             self.exec('make', 'clean', cwd=d, silence_stdout=not self.args.verbose)
             if self.args.build_tool == "cc":
                 self.exec('make', 
-                    'CC={!s} -c cc -o {!s} -- '.format(self.tracer_script, self.working_dir),
-                    'CXX={!s} -c c++ -o {!s} -- '.format(self.tracer_script, self.working_dir),
+                    'CC={!s} -c gcc -o {!s} -- '.format(self.tracer_script, self.working_dir) + gcov,
+                    'CXX={!s} -c g++ -o {!s} -- '.format(self.tracer_script, self.working_dir),
                     *self.args.make_args,
                     cwd=d, silence_stdout=not self.args.verbose)
             elif self.args.build_tool == "libtool":

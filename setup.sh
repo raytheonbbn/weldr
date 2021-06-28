@@ -1,5 +1,10 @@
 #!/bin/bash
-#Copyright (c) 2019 Raytheon BBN Technologies, Inc. All Rights Reserved.
+# Copyright (c) 2019 Raytheon BBN Technologies, Inc. All Rights Reserved.
+#
+# This document does not contain technology or Technical Data controlled under either
+# the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+#
+# Distribution A: Approved for Public Release, Distribution Unlimited
 type -p dnf >&/dev/null
 if [ $? -eq 0 ]; then
     dnf groups summary "C Development Tools and Libraries" | grep "Installed" &> /dev/null
@@ -23,5 +28,8 @@ if [ $? -eq 0 ]; then
         fi
     fi
     exit 0
+fi
+if [[ $VIRTUAL_ENV -ne "" ]]; then
+   ln -sf $VIRTUAL_ENV/bin/weldr `realpath ./fuse_binaries/fuse.sh` 
 fi
 

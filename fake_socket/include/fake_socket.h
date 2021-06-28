@@ -1,6 +1,12 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
+#ifndef FAKE_SOCKET_H
+#define FAKE_SOCKET_H
+
 #include <pthread.h>
 #include <semaphore.h>
 
@@ -16,7 +22,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#include "fuse.h"
+#include "model.h"
 #include "fake_fd.h"
 #include "sockaddr.h"
 
@@ -71,12 +77,15 @@ struct socket_mgr {
     struct fake_socket socks[MAX_FAKE_SOCKS];
 };
 
+
 //Manager management
 int init_sock_mgr();
-
-struct fake_socket* wait_for_bound_ip(const char* ip, int port);
+int init_sock_ctl();
 
 //Socket mangement
+struct fake_socket* wait_for_bound_ip(const char* ip, int port);
+
+//fd control helpers
 struct fake_socket* create_fake_socket(int fd, int domain, int type, int protocol);
 
 //Network helpers
@@ -85,7 +94,8 @@ int fake_connect(int fd, const struct sockaddr *addr);
 int fake_listen(int fd, int backlog);
 int fake_accept(int fd);
 
-
 int fake_getsockopt(int fd, int optname, void *optval, socklen_t *optlen);
 int fake_getsockname(int fd, struct sockaddr *addr, socklen_t *addrlen);
 int fake_getpeername(int fd, struct sockaddr *addr, socklen_t *addrlen);
+
+#endif

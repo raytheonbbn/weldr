@@ -1,32 +1,41 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
 #include "fake_socket.h"
 
 struct socket_mgr mgr_of_socks;
 struct fd_control sock_ctl;
 
 INIT_WRAPPER(fake_socket) {
-    int out = init_sock_mgr();
-    out |= init_sock_ctl();
-    return out;
+    init_sock_mgr();
+    init_sock_ctl();
+    return 0;
 }
 
+// Bypass function wrapping for socket()
+extern int __real_socket(int domain, int type, int protocol); 
 
 // Helper functions for defining fd_control struct.
+int create_fd() {
+    return __real_socket(AF_INET, SOCK_STREAM, 0);
+}
+
 void* create_impl_struct(int fd, void* args[]) {
     return (void*)create_fake_socket(fd, (int)(long)args[0], (int)(long)args[1], (int)(long)args[2]);
 }
 
-struct fake_filebuf *get_filebuf(fake_fd* ffd, int is_read) {
+struct fake_filebuf *get_read_filebuf(fake_fd* ffd) {
     struct fake_socket* sock = (struct fake_socket*)ffd->impl_struct;
-    if (is_read) {
-        return sock->in_buf;
-    } else {
-        return sock->out_buf;
-    }
+    return sock->in_buf;
 }
 
+struct fake_filebuf *get_write_filebuf(fake_fd* ffd) {
+    struct fake_socket* sock = (struct fake_socket*)ffd->impl_struct;
+    return sock->out_buf;
+}
 
 // Helper for managing the poll() function.
 int get_poll_status(fake_fd* ffd) {
@@ -36,28 +45,52 @@ int get_poll_status(fake_fd* ffd) {
     // Once a connection is accepted, the FD is good for both
     // inbound and outbound comms.
     int out = 0;
-    if(sock->mode == LISTEN) {
+    ssize_t in_avail;
+    ssize_t out_avail;
+    if(sock->mode == INBOUND || sock->mode == OUTBOUND) {
+        in_avail = get_avail(sock->in_buf);
+        out_avail = FD_BUFFER_SIZE - get_avail(sock->out_buf);
+        printf("Connected socket %d (%ld, %ld):", ffd->fd, in_avail, out_avail);
+        if(in_avail) {
+            printf(" POLLIN");
+            out |= POLLIN;
+        }
+        if(out_avail) {
+            printf(" POLLOUT");
+            out |= POLLOUT;
+        }
+        printf("\n");
+    } else if(sock->mode == LISTEN) {
         if(sock->connecting_sock) {
             out |= POLLIN;
         }
-    } else if(sock->mode == INBOUND || sock->mode == OUTBOUND) {
-        if(get_avail(sock->in_buf)) {
-            out |= POLLIN;
-        }
-        if(FD_BUFFER_SIZE - get_avail(sock->out_buf)) {
-            out |= POLLOUT;
-        }       
     }
-    printf("Polling on %d => %d\n", ffd->fd, out);
     return out;
 }
 
+int handle_ioctl(struct fake_fd *ffd, unsigned long request, int *ret, va_list args) {
+    switch(request) {
+#ifdef SIOCSIFMTU
+    case(SIOCSIFMTU):
+        // Set the MTU for an interface.
+        // TODO: Always passing this through makes me uneasy.
+        return FAKE_HANDLER_REAL;
+#endif //SIOCSIFMTU
+    default:
+        return FAKE_HANDLER_SKIP;
+    }
+}
 
 // Plug the helper functions into the function table struct.
 int init_sock_ctl() {
+    sock_ctl.create_fd = &create_fd;
     sock_ctl.create_impl_struct = &create_impl_struct;
-    sock_ctl.get_filebuf = &get_filebuf;
+    sock_ctl.get_read_filebuf = &get_read_filebuf;
+    sock_ctl.get_write_filebuf = &get_write_filebuf;
     sock_ctl.get_poll_status = &get_poll_status;
+    sock_ctl.handle_fcntl = NULL;
+    sock_ctl.handle_ioctl = &handle_ioctl;
+    sock_ctl.parent = &basic_fd_ctl;
     return 0;
 }
 
@@ -103,6 +136,10 @@ struct fake_socket* create_fake_socket(int fd, int domain, int type, int protoco
     sem_init(&(out->connect_sem), 0, 1);
     sem_init(&(out->waiting_sem), 0, 0);
     sem_init(&(out->accept_sem), 0, 0);
+    out->accepted_in_buf = NULL;
+    out->accepted_out_buf = NULL;
+    out->in_buf = NULL;
+    out->out_buf = NULL;
     return out;
 }
 

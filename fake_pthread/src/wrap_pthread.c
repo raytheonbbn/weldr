@@ -1,6 +1,9 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
 #include "pthread_impl.h"
 #include <stdio.h>
 
@@ -16,7 +19,7 @@ INIT_WRAPPER(fake_pthread) {
         return 1; 
     }
     if(tid != 0) {
-        fprintf(stderr, "Main thread allocated as %u, not 0\n");
+        fprintf(stderr, "Main thread allocated as %lu, not 0\n", tid);
         return 1;
     } else {
         //printf("Main thread allocated as 0, according to library...\n");

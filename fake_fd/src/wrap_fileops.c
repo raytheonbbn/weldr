@@ -1,8 +1,13 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
 #define _GNU_SOURCE
 #include "fake_fd.h"
+// The following includes can't be rolled into fake_fd.h
+// They reference interfaces that interfere with other weldr models.
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -31,6 +36,10 @@ int __real_close(int fd);
 ssize_t __real_read(int fd, void *buf, size_t count);
 ssize_t __real_write(int fd, const void *buf, size_t count);
 
+// Function declarations for vararg wrappers
+int __fake_vfcntl(int fd, int cmd, va_list args);
+int __fake_vioctl(int fd, unsigned long request, va_list args);
+
 // Function declarations of fake library calls
 int __wrap_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout);
 int __wrap_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask);
@@ -46,11 +55,48 @@ ssize_t __wrap_read(int fd, void *buf, size_t count);
 ssize_t __wrap_write(int fd, const void *buf, size_t count);
 
 
-int __wrap_fcntl(int fd, int cmd, ... /* arg */) {
+int __wrap_fcntl(int fd, int cmd, ... /* args */) {
+    int out = 0;
+    int res = 1;
     struct fake_fd *ffd = get_fd_by_fd(fd);
-    
+    struct fd_control *ctl;
+
     va_list args;
     va_start(args, cmd);
+
+    if (ffd == NULL) {
+        //If we're not a fake file descriptor,
+        //call the real fcntl, via a varargs wrapper.
+        out = __fake_vfcntl(fd, cmd, args);
+    } else {
+        // If we are fake, use the handler.
+        ctl = ffd->ctl;
+        do {
+            if (ctl == NULL) {
+                // We're out of handlers.
+                out = FAKE_HANDLER_DEFAULT;
+                break;
+            }
+            if (ctl->handle_fcntl) {
+                res = ctl->handle_fcntl(ffd, cmd, &out, args);
+                if (res == FAKE_HANDLER_SUCCESS) {
+                    // Handler succeeded.
+                    break;
+                } else if (res == FAKE_HANDLER_REAL) {
+                    // Handler delegated to the real function.
+                    out = __fake_vfcntl(fd, cmd, args);
+                    break;
+                }
+            }
+            // Failed on this one; try the parent's handler.
+            ctl = ctl->parent;
+        } while(1);
+    }
+    va_end(args);
+    return out;
+}
+
+int __fake_vfcntl(int fd, int cmd, va_list args) {
     //fcntl takes one argument,
     //but its type changes based on cmd.
     //There is a vfcntl in the libc source, but it's not exposed.
@@ -77,12 +123,8 @@ int __wrap_fcntl(int fd, int cmd, ... /* arg */) {
 #ifdef F_SETFD
     isInt |= (cmd == F_SETFD);
 #endif
-#ifdef F_GETFL
-    isModeled |= (cmd == F_GETFL);
-#endif
 #ifdef F_SETFL
     isInt |= (cmd == F_SETFL);
-    isModeled |= (cmd == F_SETFL);
 #endif
 #ifdef F_SETOWN
     isInt |= (cmd == F_SETOWN);
@@ -125,117 +167,179 @@ int __wrap_fcntl(int fd, int cmd, ... /* arg */) {
     if(isFOwnerEx) {
         f = va_arg(args, struct f_owner_ex*);
     }
-    va_end(args);
 
-
-    if(isModeled && ffd != NULL) {
-        if(isInt) {
-            return fake_fcntl_int(ffd, cmd, i);
-        } else {
-            return fake_fcntl_void(ffd, cmd);
-        }
-    } else if(ffd == NULL) {
-        if(isInt) {
-            return __real_fcntl(fd, cmd, i);
-        } else if(isFlock) {
-            return __real_fcntl(fd, cmd, l);
-        } else if(isFOwnerEx) {
-            return __real_fcntl(fd, cmd, f);
-        } else if(isUint32P) {
-            return __real_fcntl(fd, cmd, u);
-        } else {
-            return __real_fcntl(fd, cmd);
-        }
+    if(isInt) {
+        return __real_fcntl(fd, cmd, i);
+    } else if(isFlock) {
+        return __real_fcntl(fd, cmd, l);
+    } else if(isFOwnerEx) {
+        return __real_fcntl(fd, cmd, f);
+    } else if(isUint32P) {
+        return __real_fcntl(fd, cmd, u);
     } else {
-        return 0;
+        return __real_fcntl(fd, cmd);
     }
 }
-
-int __wrap_ioctl(int fd, unsigned long request, ... /* arg */) {
-    //Bypass if this is a fake FD.
-    //I REALLY hope this isn't needed.
+int __wrap_ioctl(int fd, unsigned long request, ... /* args */) {
+    int out = 0;
+    int res = 1;
     struct fake_fd *ffd = get_fd_by_fd(fd);
-    if(ffd != NULL) {
-        return 0;
-    }
+    struct fd_control *ctl;
 
     va_list args;
     va_start(args, request);
+
+    if (ffd == NULL) {
+        //If we're not a fake file descriptor,
+        //call the real ioctl, via a varargs wrapper.
+        out = __fake_vioctl(fd, request, args);
+    } else {
+        // If we are fake, use the handler.
+        ctl = ffd->ctl;
+        do {
+            if (ctl == NULL) {
+                // We're out of handlers.
+                out = FAKE_HANDLER_DEFAULT;
+                break;
+            }
+            if (ctl->handle_ioctl) {
+                res = ctl->handle_ioctl(ffd, request, &out, args);
+                if (res == FAKE_HANDLER_SUCCESS) {
+                    // Handler succeeded.
+                    break;
+                } else if (res == FAKE_HANDLER_REAL) {
+                    // Handler delegated to the real function.
+                    out = __fake_vioctl(fd, request, args);
+                    break;
+                }
+            }
+            // Failed on this one; try the parent's handler.
+            ctl = ctl->parent;
+        } while(1);
+    }
+    va_end(args);
+    return out;
+}
+
+int __fake_vioctl(int fd, unsigned long request, va_list args) {
     //Again with the single-argument varargs.
     //Unlike fcntl, this isn't well-documented.
-    //Hope like crazy that I don't kill my OS?
-    char* arg = va_arg(args, char*);
-    va_end(args);
-
+    //It seems to usually be a pointer?
+    void *arg = va_arg(args, void*);
     return __real_ioctl(fd, request, arg);
 }
 
 int __wrap_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout) {
-    int out = 0;
+    int count = 0;
     int real = 0;
-    // Trip the scheduler to give other threads a voice.
-    // We don't want to block, since we don't have anything
-    // concrete to block on.
-    if(pthread_yield()) {
-        fprintf(stderr, "ABORT: failed to yield our thread.\n");
-        exit(1);
-    }
-    for(int i = 0; i < FD_SETSIZE; i++) {
-        struct fake_fd* ffd = get_fd_by_fd(i);
-        short poll_flags = 0;
-        if(ffd != NULL) {
-            poll_flags = ffd->ctl->get_poll_status(ffd);
-        }
 
-        if(readfds != NULL && FD_ISSET(i, readfds)) {
-            if(ffd != NULL) {
-                printf("Read-Watching Fake FD: %d\n", i);
-                if(poll_flags & POLLIN) {
-                    FD_SET(i, readfds);
-                    out++;
-                } else {
-                    FD_CLR(i, readfds);
-                }
-            } else {
-                printf("Read-Watching Real FD: %d\n", i);
-                real++;
-            }
-        }   
-        if(writefds != NULL && FD_ISSET(i, writefds)) {
-            if(ffd != NULL) {
-                printf("Write-Watching Fake FD: %d\n", i);
-                if(poll_flags & POLLOUT) {
-                    FD_SET(i, writefds);
-                    out++;
-                } else {
-                    FD_CLR(i, writefds);
-                }
-            } else {
-                printf("Write-Watching Real FD: %d\n", i);
-                real++;
-            } 
+    fd_set real_readfds;
+    fd_set real_writefds;
+    fd_set real_exceptfds;
+    struct timeval real_timeout = {
+        .tv_sec = 0,
+        .tv_usec = FAKE_SELECT_TIMEOUT
+    };
+
+    // Emulate blocking behavior by looping until count is positive,
+    // but only if timeout is NULL.
+    // TODO: Before, I had select without a loop.  Why?
+    // I think it caused issues in mosquitto;
+    // they use both poll() and select(), and the two were clashing.
+    while(timeout == NULL && count == 0) {
+        //Clear the real select parameters; we need to re-derive them.
+        FD_ZERO(&real_readfds);
+        FD_ZERO(&real_writefds);
+        FD_ZERO(&real_exceptfds);
+        real = 0;
+
+        // Trip the scheduler to give other threads a voice.
+        // We don't want to block, since we don't have anything
+        // concrete to block on.
+        if(pthread_yield()) {
+            fprintf(stderr, "ABORT: failed to yield our thread.\n");
+            exit(1);
         }
-        if(exceptfds != NULL && FD_ISSET(i, exceptfds)) {
+        for(int i = 0; i < FD_SETSIZE; i++) {
+            struct fake_fd* ffd = get_fd_by_fd(i);
+            short poll_flags = 0;
+        
+            //If this is a fake file descriptor, get the poll status.
             if(ffd != NULL) {
-                printf("Error-Watching Fake FD: %d\n", i);
-                FD_CLR(i, exceptfds);
-            } else {
-                printf("Error-Watching Real FD: %d\n", i);
-                real++;
+                poll_flags = ffd->ctl->get_poll_status(ffd);
             }
+            // Handle watching FDs for read events.
+            if(readfds != NULL && FD_ISSET(i, readfds)) {
+                if(ffd != NULL) {
+                    // Check the fake fd's poll status to see
+                    // if it has a read event pending.
+                    printf("Read-Watching Fake FD: %d\n", i);
+                    if(poll_flags & POLLIN) {
+                        FD_SET(i, readfds);
+                        count++;
+                    } else {
+                        FD_CLR(i, readfds);
+                    }
+                } else {
+                    // Mark this FD for a real select.
+                    printf("Read-Watching Real FD: %d\n", i);
+                    FD_SET(i, &real_readfds);
+                    // Have real store select's nfds parameter;
+                    // highest-valued FD plus one.
+                    real = i + 1;
+                }
+            }   
+            // Handle watching FDs for write events.
+            if(writefds != NULL && FD_ISSET(i, writefds)) {
+                if(ffd != NULL) {
+                    printf("Write-Watching Fake FD: %d\n", i);
+                    if(poll_flags & POLLOUT) {
+                        FD_SET(i, writefds);
+                        count++;
+                    } else {
+                        FD_CLR(i, writefds);
+                    }
+                } else {
+                    printf("Write-Watching Real FD: %d\n", i);
+                    FD_SET(i, &real_writefds);
+                    real = i + 1;
+                }
+            }
+            // Handle watching FDs for errors.
+            if(exceptfds != NULL && FD_ISSET(i, exceptfds)) {
+                if(ffd != NULL) {
+                    // Fake FDs won't have error conditions, so clear this bit.
+                    printf("Error-Watching Fake FD: %d\n", i);
+                    FD_CLR(i, exceptfds);
+                } else {
+                    printf("Error-Watching Real FD: %d\n", i);
+                    FD_SET(i, &real_exceptfds);
+                    real = i + 1;
+                }
+            }
+        }
+        if(real > 0) {
+            // If we have real FDs, try selecting on them for a short while.
+            real = select(real, &real_readfds, &real_writefds, &real_exceptfds, &real_timeout);
+            if (real < 0) {
+                // Error.  Let the user handle it.
+                return -1;
+            }
+            // If it's not an error, 'real' will hold the number of events registered.
+            count += real;
         }
     }
-    if(real > 0) {
-        fprintf(stderr, "ABORT: select can't handle real fds yet.\n");
-        exit(1);
-    }
-    printf("We're watching %d file descriptors\n", out);
     
-    return out;
+    return count;
 }
 
 int __wrap_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask) {
-    return __wrap_select(nfds, readfds, writefds, exceptfds, NULL);
+    // Reformat the timeout for select()
+    struct timeval to = {
+        .tv_sec = timeout->tv_sec,
+        .tv_usec = (timeout->tv_nsec / 1000l)
+    };
+    return __wrap_select(nfds, readfds, writefds, exceptfds, &to);
 }
 
 int __wrap_poll(struct pollfd *fds, nfds_t nfds, int timeout) {
@@ -244,6 +348,14 @@ int __wrap_poll(struct pollfd *fds, nfds_t nfds, int timeout) {
 
 int __wrap_ppoll(struct pollfd *fds, nfds_t nfds, const struct timespec *tmo_p, const sigset_t *sigmask) {
     int count = 0;
+    int first = 1;
+    struct pollfd real_fds[nfds];
+    nfds_t real_idx[nfds];
+    nfds_t n_real_fds = 0;
+
+    // Iterate forever.  This ignores the timeout argument.
+    // However, wall-clock time is rather nebulous in welded binaries.
+    // TODO: Why do I ignore the timeout here, but not in select()?
     while(count == 0) {
         // Trip the scheduler to give other threads a voice.
         // We don't want to block, since we don't have anything
@@ -256,24 +368,46 @@ int __wrap_ppoll(struct pollfd *fds, nfds_t nfds, const struct timespec *tmo_p, 
         for(nfds_t i = 0; i < nfds; i++) {
             struct pollfd* f = (fds + i);
             struct fake_fd* ffd = get_fd_by_fd(f->fd);
-            // If we have a real fd, abort.
-            // FIXME: Integrate this.  I have ideas below.
             if(ffd == NULL) {
-                fprintf(stderr, "ABORT: Handling a real fd.\n");
-                exit(1);
+                //If we have a real FD, add it to the list on the first go-round.
+                if(first && f->fd != -1) {
+                    real_fds[n_real_fds].fd = f->fd;
+                    real_fds[n_real_fds].events = f->events;
+                    real_idx[n_real_fds] = i;
+                    n_real_fds++;
+                }
+                continue;
             }
             // Collect the events relevant to our call.
             short fd_events = ffd->ctl->get_poll_status(ffd);
-            printf("\tPoll Results: expected %x vs actual %x\n", f->events, fd_events);
             fd_events &= f->events;
             f->revents = fd_events;
 
-            // If we had relevant, events, record the fact.
+            // If we had relevant events, record the fact.
             if(fd_events) {
+                printf("%p: fake fd %d had relevant events\n", fds, f->fd);
                 count++;
             } 
         }
+        if (n_real_fds > 0) {
+            if(__real_poll(real_fds, n_real_fds, FAKE_POLL_TIMEOUT) < 0) {
+                // Real poll encountered an error.  Let the user deal with it.
+                return -1;
+            }
+            for(nfds_t i; i < n_real_fds; i++) {
+                // Find the pollfd in the original array.
+                struct pollfd *fake = (fds + real_idx[i]);
+                // Update it with the returned events.
+                fake->revents = real_fds[i].revents;
+                // If we had results, increment count.
+                if(fake->revents) {
+                    printf("%p: real fd %d had relevant events\n", fds, fake->fd);
+                    count++;
+                }
+            }
+        }
     }
+    printf("%p: %d relevant events total\n", fds, count);
     return count;
 }
 
@@ -303,5 +437,25 @@ ssize_t __wrap_write(int fd, const void *buf, size_t count) {
         return fake_write(fd, buf, count);
     } else {
         return __real_write(fd, buf, count);
+    }
+}
+
+// Handler function for fcntl.
+// This relies on annoying header files, and can't be included in fake_fd.c
+int basic_handle_fcntl(struct fake_fd* ffd, int cmd, int *ret, va_list args) {
+    switch(cmd) {
+#ifdef F_GETFL
+        case F_GETFL:
+            *ret = ffd->flags;
+            return FAKE_HANDLER_SUCCESS;
+#endif // F_GETFL
+#ifdef F_SETFL
+        case F_SETFL:
+            ffd->flags = va_arg(args, int);
+            *ret = 0; 
+            return FAKE_HANDLER_SUCCESS;
+#endif // F_SETFL
+        default:
+            return FAKE_HANDLER_SKIP;
     }
 }

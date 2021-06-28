@@ -1,6 +1,10 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
+#include "main.h"
 
 #define MAX_ARGS 10
 #define DEFAULT_BASEDIR "/tmp"
@@ -76,7 +80,7 @@ char *parse_filepath(char *arg) {
 
 // Make sure that a directory exists,
 // and is accessible.
-void check_dir(char *arg) {
+void check_dir(const char *arg) {
     //NOTE: Weldr does NOT take responsibility for creating basedir.
     //It's really annoying.
     struct stat s;
@@ -97,33 +101,40 @@ void check_dir(char *arg) {
 }
 
 // Parse command-line interface for a welded binary.
-int parse_args(int argc, char** argv) {
-    basedir = DEFAULT_BASEDIR;
-    // We know argv[0] is the binary name; useless.
-    for(int i = 1; i < argc; i++) {
+int parse_args(int argc, char** argv, int num_instances, const char **basedir, const char const **instance_names, const char ***instance_args, const char const ***default_instance_args) {
+    int i;
+    int j;
+    
+    // Assign default values to outputs.
+    *basedir = DEFAULT_BASEDIR;
+    for(i = 0; i < num_instances; i++) {
+        instance_args[i] = default_instance_args[i];
+    }
+    
+    // Start at argv[1]; We know argv[0] is the binary name.
+    for(i = 1; i < argc; i++) {
         if(!strcmp(argv[i], "-h") || !(strcmp(argv[i], "--help"))) {
-            printf("Welded binary.\nThis is a combination of several programs,\n");
-            printf("designed to run inside a single process.\n\n");
-
-            printf("Arguments may be passed to an instance through the following CLI:\n\n");
-            printf("\t--inst-args arg1,arg2,arg3,...argN\n\n");
-
-            printf("To allow communication with the individual programs,\n");
-            printf("this binary redirects the standard streams for each instance\n");
-            printf("to files.  For example: \n\n");
-            printf("\t%s/instA_stdin\n", basedir);
-            printf("\t%s/instA_stdout\n", basedir);
-            printf("\t%s/instA_stderr\n", basedir);
-            printf("\t%s/instB_stdin\n", basedir);
-            printf("\t%s/instB_stdout\n", basedir);
-            printf("\t%s/instB_stderr\n\n", basedir);
-            printf("stdout and stderr are standard files, while stdin is a fifo;\n");
-            printf("You can send a message to stdin by executing something like: \n\n");
-            printf("\techo 'msg' > %s/instA_stdin\n\n", basedir);
-
-            printf("This binary contains the following instances:\n");
-            for(int i = 0; i < NUM_INSTANCES; i++) {
-                printf("\t%s\n", INSTANCE_NAMES[i]);
+            //Print the help message and quit.
+            printf("Welded binary.\nThis is a combination of several programs,\n"
+                   "designed to run inside a single process.\n\n"
+                   "Arguments may be passed to an instance through the following CLI:\n\n"
+                   "\t--inst-args arg1,arg2,arg3,...argN\n\n"
+                   "To allow communication with the individual programs,\n"
+                   "this binary redirects the standard streams for each instance\n"
+                   "to files.  For example: \n\n"
+                   "\t%1$s/instA_stdin\n"
+                   "\t%1$s/instA_stdout\n"
+                   "\t%1$s/instA_stderr\n"
+                   "\t%1$s/instB_stdin\n"
+                   "\t%1$s/instB_stdout\n"
+                   "\t%1$s/instB_stderr\n\n"
+                   "stdout and stderr are standard files, while stdin is a fifo;\n"
+                   "You can send a message to stdin by executing something like: \n\n"
+                   "\techo 'msg' > %1$s/instA_stdin\n\n"
+                   "This binary contains the following instances:\n", *basedir);
+            // NOTE: Because we're quitting, we can reuse i.
+            for(i = 0; i < num_instances; i++) {
+                printf("\t%s\n", instance_names[i]);
             }
             exit(0);
         }
@@ -138,7 +149,7 @@ int parse_args(int argc, char** argv) {
                 fprintf(stderr, "Expected a file path, but got another option %s\n", argv[i]);
                 exit(1);
             }
-            basedir = parse_filepath(argv[i]);
+            *basedir = parse_filepath(argv[i]);
 
         } else if(strstr(argv[i], "-args") != NULL) {
             // Get the bare instance name.
@@ -147,9 +158,9 @@ int parse_args(int argc, char** argv) {
             
             // Iterate through the instances until we find a match, or run out.
             int found = 0;
-            for(int j = 0; j < NUM_INSTANCES; j++) {
+            for(j = 0; j < num_instances; j++) {
                 // When we find a match, parse the args.
-                if(!strcmp(INSTANCE_NAMES[j], inst_name)) {
+                if(!strcmp(instance_names[j], inst_name)) {
                     found = 1;
                     i++;
                     printf("Found args for %s: %s\n", inst_name, argv[i]);
@@ -174,13 +185,13 @@ int parse_args(int argc, char** argv) {
                     printf("\tFound %d args:\n", num_args);
 
                     //Little trick; argv[0] is artificial, so use it to store argc.
-                    INSTANCE_ARGS[j] = malloc(sizeof(char*) * (num_args + 1));
-                    INSTANCE_ARGS[j][0] = malloc(sizeof(int));
-                    *(int*)INSTANCE_ARGS[j][0] = num_args;
+                    instance_args[j] = malloc(sizeof(char*) * (num_args + 1));
+                    instance_args[j][0] = malloc(sizeof(int));
+                    *(int*)instance_args[j][0] = num_args;
                     char *arg = strtok(argv[i], ",");
                     for(idx = 1; idx <= num_args; idx++) {
                         printf("\t\t%s\n", arg);
-                        INSTANCE_ARGS[j][idx] = arg;
+                        instance_args[j][idx] = arg;
                         arg = strtok(NULL, ",");
                     }
                     break;
@@ -193,5 +204,5 @@ int parse_args(int argc, char** argv) {
         }
     }
     // Ensure the basedir is valid.
-    check_dir(basedir);
+    check_dir(*basedir);
 }

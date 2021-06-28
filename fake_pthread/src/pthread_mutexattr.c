@@ -1,6 +1,9 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
 #include "pthread_mutexattr.h"
 
 int   fake_pthread_mutexattr_init(pthread_mutexattr_t *attrs) {
@@ -111,7 +114,7 @@ int   fake_pthread_mutexattr_gettype(const pthread_mutexattr_t *attrs, int *curr
         return EINVAL;
     }
 
-    *curr_type = (*attrs >> 3) & 3;
+    *curr_type = ((*attrs) >> 3) & 3;
     return 0;
 }
 int   fake_pthread_mutexattr_settype(pthread_mutexattr_t *attrs, int new_type)

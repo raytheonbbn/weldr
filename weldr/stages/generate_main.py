@@ -1,6 +1,9 @@
 # Copyright (c) 2020 Raytheon BBN Technologies, Inc.  All Rights Reserved.
+#
 # This document does not contain technology or Technical Data controlled under either
-# the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+# the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+#
+# Distribution A: Approved for Public Release, Distribution Unlimited
 import pathlib
 from ..argdef import ArgDef
 from ..stage import Stage
@@ -24,9 +27,17 @@ class MainGeneratorStage(Stage):
     def predicessor(self):
         return frozenset(["resolve_syms"])
 
+    def copy_static_sources(self):
+        srcdir = pathlib.Path(self.args.model_dir, 'src')
+        for src in srcdir.glob('*.c'):
+            self.l.debug('Copying static source {!s} into project.'.format(src))
+            self.cp(src, self.working_dir)
+
     def generate_main_header(self):
         with open(pathlib.Path(self.working_dir, "main.h"), "w") as header:
             header_txt = [
+                '#ifndef WELDR_MAIN_H',
+                '#define WELDR_MAIN_H',
                 '/*',
                 ' * Automatically-generated main header from weldr',
                 ' */',
@@ -46,19 +57,22 @@ class MainGeneratorStage(Stage):
                 '#include <wordexp.h>',
                 '#endif',
                 '',
+                '// Signature for argument parser',
+                'int parse_args(int argc, char** argv, int num_instances, const char **basedir, const char const **instance_names, const char ***instance_args, const char const ***default_instance_args);',
+                '',
                 '// Signatures for stub library initializers'
             ]
             for cmd in filter(lambda x: x in self.results.insts, self.results.cmd_stub_models):
                 for inst in self.results.insts[cmd]:
                     for model in map(lambda p: p.name, self.results.cmd_stub_models[cmd]):
                         self.l.debug("Define init of {:s} for {:s}".format(model, inst))
-                        header_txt.append('int {:s}_fuse_init_stub_{:s}(const char* basedir, const char* instance);'.format(inst, model))
+                        header_txt.append('int {:s}_weldr_init_stub_{:s}(const char* basedir, const char* instance);'.format(inst, model))
 
             header_txt.append('')
             header_txt.append('// Signatures for wrapper library initializers')
             for model in map(lambda p: p.name, self.results.global_wrapper_models):
                 self.l.debug("Define init of {:s}".format(model))
-                header_txt.append('int fuse_init_wrap_{:s}();'.format(model))
+                header_txt.append('int weldr_init_wrap_{:s}();'.format(model))
 
             header_txt.append('')
             header_txt.append('// Signatures for instance main functions')
@@ -66,7 +80,8 @@ class MainGeneratorStage(Stage):
                 for inst in insts:
                     self.l.debug("Define main for {:s}".format(inst))
                     header_txt.append('int {:s}_main(int argc, char* argv[]);'.format(inst))
-            
+            header_txt.append('')
+            header_txt.append('#endif//WELDR_MAIN_H')
             header_txt = '\n'.join(header_txt)
             print(header_txt, file=header)
 
@@ -80,16 +95,46 @@ class MainGeneratorStage(Stage):
                 '#include "main.h"',
                 '#define NUM_INSTANCES {:d}'.format(len(self.results.inst_args.keys())),
                 '',
-                'char *INSTANCE_NAMES[NUM_INSTANCES];',
-                'char **INSTANCE_ARGS[NUM_INSTANCES];',
-                'char *basedir;',
-                ''
             ]
+            inst_names_txt = []
+            inst_argv_vars = []
 
-            #Read the argument parser code from parse_args.c
-            with open(pathlib.Path(self.args.model_dir, 'src', 'parse_args.c'), 'r') as parse_args:
-                for l in map(lambda x: x.replace('\n', ''), parse_args):
-                    source_txt.append(l)
+            inst_idx = 0
+            for inst, args in self.results.inst_args.items():
+                
+                source_txt.append('// Default configuration for instance {:s}'.format(inst))
+
+                # Assign instance name
+                inst_names_txt.append('"{:s}"'.format(inst))
+
+                # Assign default argc from sytem definition
+                argc_name = '{:s}_default_argc'.format(inst)
+                source_txt.append('int {:s} = {:d};'.format(argc_name, len(args)))
+
+                # Assign default argv from system definition
+                args_txt = ['(const char *)&{:s}'.format(argc_name)]
+                # Stringify all members of argv, and add them to the back of args_txt.
+                args_txt.extend(map(lambda x: '"{:s}"'.format(x), args))
+                
+
+                # Write the default argv as a scalar variable.
+                var_name = '{:s}_default_argv'.format(inst)
+                source_txt.append('const char *{:s}[] = {{{:s}}};'
+                        .format(var_name, ', '.join(args_txt)))
+                # Save off the scalar variable so we can add it to DEFAULT_INSTANCE_ARGS.
+                # Nested scalar arrays are a pain, so we need to initialize things separately.
+                inst_argv_vars.append(var_name)
+                source_txt.append('')
+
+            source_txt.append('// Global configuration for subprograms.')
+            source_txt.append('const char *INSTANCE_NAMES[] = {{{:s}}};'
+                    .format(', '.join(inst_names_txt)))
+            source_txt.append('const char **DEFAULT_INSTANCE_ARGS[] = {{{:s}}};'
+                    .format(', '.join(inst_argv_vars)))
+            source_txt.append('const char **INSTANCE_ARGS[NUM_INSTANCES];')
+            source_txt.append('const char *basedir;')
+            source_txt.append('')
+
 
             #Set up the thread entry method foreach instance.
             for inst in self.results.inst_args.keys():
@@ -135,20 +180,23 @@ class MainGeneratorStage(Stage):
 
             #Set up the main method.
             main_txt = [
+                '',
                 'int main(int argc, char *argv[]) {',
                 '    // Init instance data'
             ]
-            i = 0
-            for inst in self.results.inst_args.keys():
-                main_txt.append('    INSTANCE_NAMES[{:d}] = "{:s}";'.format(i, inst))
-                i += 1
+
 
             source_txt = source_txt + main_txt
 
             main_txt_2 = [
                 '    // Parse arguments',
                 '    printf("Parsing Arguments\\n");',
-                '    parse_args(argc, argv);',
+                '    parse_args(argc, argv,',
+                '        NUM_INSTANCES,',
+                '        &basedir,',
+                '        INSTANCE_NAMES,', 
+                '        INSTANCE_ARGS,',
+                '        DEFAULT_INSTANCE_ARGS);',
                 '',
                 '    // Init stub libraries',
                 '    printf("Starting stub libraries\\n");',
@@ -164,7 +212,7 @@ class MainGeneratorStage(Stage):
                         stub_init_txt = [
                             '',
                             '    // Call the initializer of {:s} for {:s}'.format(stub, inst),
-                            '    if(ret = {:s}_fuse_init_stub_{:s}(basedir, "{:s}")) {{'.format(inst, stub, inst),
+                            '    if(ret = {:s}_weldr_init_stub_{:s}(basedir, "{:s}")) {{'.format(inst, stub, inst),
                             '        fprintf(stderr, "Failed to init stub {:s} for {:s}(%d)\\n", ret);'.format(stub, inst),
                             '        exit(ret);',
                             '    }'
@@ -183,7 +231,7 @@ class MainGeneratorStage(Stage):
                 wrap_init_txt = [
                     '',
                     '    // Call the initializer of {:s}'.format(model),
-                    '    if(ret = fuse_init_wrap_{:s}()){{'.format(model),
+                    '    if(ret = weldr_init_wrap_{:s}()){{'.format(model),
                     '        fprintf(stderr, "Failed to init wrapper {:s}\\n");'.format(model),
                     '        exit(ret);',
                     '    }'
@@ -244,6 +292,8 @@ class MainGeneratorStage(Stage):
 
 
     def run(self):
+        self.l.info('Copying static sources...')
+        self.copy_static_sources()
         self.l.info("Generating header file for driver code (prevents linker warnings.)")
         self.generate_main_header()
         self.l.info("Generating driver code.")

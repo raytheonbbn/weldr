@@ -1,6 +1,9 @@
 # Copyright (c) 2020 Raytheon BBN Technologies, Inc.  All Rights Reserved.
+#
 # This document does not contain technology or Technical Data controlled under either
-# the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+# the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+#
+# Distribution A: Approved for Public Release, Distribution Unlimited
 import itertools
 import pathlib
 import re
@@ -146,7 +149,7 @@ class DetectLibsStage(Stage):
         # Identify the subprogram names based on the working directory structure.
         # Each command comes out of make as a directory with a make.out file
         for x in self.working_dir.rglob("make.out"):
-            self.cmds.add(x.parent.name)
+            self.cmds.add(x.parent.relative_to(self.working_dir).as_posix())
 
     def identify_ext_lib_paths(self):
         # Use the saved copy of the executable to identify dynamic library paths.
@@ -186,15 +189,6 @@ class DetectLibsStage(Stage):
                     if m is not None:
                         lib = m.group(1)
                     
-                    if not self.args.use_dyn_models:
-                        old_path = path
-                        name = path.name
-                        name = self.ext_lib_version_regex.sub('.a', name)
-                        path = path.parent / name
-                        if not path.exists():
-                            self.l.error("Using static models, but can't find a static version of {!s}".format(old_path))
-                            raise Exception("Missing static library")
-
                     if lib in self.ext_lib_paths and self.ext_lib_paths[lib] != path:
                         self.l.error("Library path mismatch for {:s}:".format(lib))
                         self.l.error("{:s}'s path: {!s}".format(cmd, path))
@@ -208,11 +202,8 @@ class DetectLibsStage(Stage):
 
     def add_lib_model(self, lib_dir, cmd=None):
         #Copy all stub objects into the relevant instances. 
-        if self.args.use_dyn_models:
-            ext = 'so'
-        else:
-            ext = 'a'
-        for x in lib_dir.rglob("libstub*.{:s}".format(ext)):
+        extension = 'so'
+        for x in lib_dir.rglob("libstub*.{:s}".format(extension)):
             #If we didn't specify a command, copy to all command dirs.
             if cmd == None:
                 self.l.debug("Adding stub library {!s} to all programs".format(x))
@@ -431,7 +422,7 @@ class DetectLibsStage(Stage):
             with open(x, "r") as f:
                 #Extract the data from the file.
                 data = f.read().split("\n")
-                exe = pathlib.Path(data[0]).name
+                exe = pathlib.Path(data[0]).as_posix()
                 cmd = data[1]
                 self.l.debug("Command for {:s}:\n\t{:s}".format(exe, cmd))
                 

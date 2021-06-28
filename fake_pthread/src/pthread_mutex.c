@@ -1,6 +1,9 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
 #include "pthread_mutex.h"
 
 int fake_pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attrs) {
@@ -28,6 +31,10 @@ int fake_pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *a
 }
 
 int fake_pthread_mutex_destroy(pthread_mutex_t *mutex) {
+    if(mutex == NULL) {
+        errno = EINVAL;
+        return EINVAL;
+    }
     free(mutex->__struct.waiting_threads);
     return 0;
 }

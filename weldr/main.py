@@ -1,6 +1,9 @@
 # Copyright (c) 2020 Raytheon BBN Technologies, Inc.  All Rights Reserved.
+#
 # This document does not contain technology or Technical Data controlled under either
-# the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+# the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+#
+# Distribution A: Approved for Public Release, Distribution Unlimited
 import argparse
 import sys
 from importlib import import_module
@@ -14,8 +17,7 @@ def parse_args():
     parser.add_argument('projects', nargs='+', help='The root directories of the projects to weld.')
     parser.add_argument('-t', '--temp-dir', action='store', required='true',
                         help='Directory path to use as scratch space.')
-    parser.add_argument('-M', '--model-dir', default='/home/test/bwam-installer/weldr/',
-                        help="Specify the directory that the weldr models live in")
+    parser.add_argument('-M', '--model-dir', default=Path(__file__).parents[1], help="Specify the directory that the weldr models live in")
     parser.add_argument('-S', '--safe-mode', action='store_true',
                         help='Execute weldr in safe mode.  Instead of overwriting the temp directory, weldr will create a new one for each phase of processing.  Useful for tracing bugs, and required if you want to be able to use the --skip-make flag later.')
     parser.add_argument('-v', '--verbose', action='store_true',
@@ -24,8 +26,6 @@ def parse_args():
                         help='Start execution at a later stage.  Only valid if safe mode is on, and you have a safe mode folder for the predicessor stage.')
     parser.add_argument('--stop-stage', action='store',
                         help='Stop execution at an earlier stage.  Only valid if safe mode is on.')
-    parser.add_argument('--save-results', action='store_true',
-                        help='Store the results dictionary in a file after each stage completes.')
     parser.add_argument('-L', '--log-file', action='store',
                         help='Write logs to a file out.log in the current directory.')
     parser.add_argument('-vv', '--very-verbose', action='store_true',

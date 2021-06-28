@@ -61,3 +61,11 @@ The following steps are code-complete, and being tested.
 This turned out to be a lot easier than suspected.  Most C++ libraries ride directly on top of C APIs.  Model C accurately enough, and C++ follows naturally.
 
 If we try to handle already-compiled artifacts, C++ object files use more features of the ELF format, defining extra code and data sections to define different parts of each class.  This complicates the process of reverting a linked binary, since these sections are lost once static linking is complete.
+
+----------
+Copyright (c) Raytheon BBN Technologies 2021, All Rights Reserved
+
+This document does not contain technology or Technical Data controlled under either
+the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+
+Distribution A: Approved for Public Release, Distribution Unlimited

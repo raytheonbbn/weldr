@@ -1,6 +1,9 @@
 # Copyright (c) 2020 Raytheon BBN Technologies, Inc.  All Rights Reserved.
+#
 # This document does not contain technology or Technical Data controlled under either
-# the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+# the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+#
+# Distribution A: Approved for Public Release, Distribution Unlimited
 import pathlib
 import re
 from ..argdef import ArgDef
@@ -8,17 +11,11 @@ from ..stage import Stage
 
 class CompileArgs(ArgDef):
     def add_args(self, parser):
-        parser.add_argument('-D', '--use-dyn-models', action='store_true',
-                            help="Switches weldr to dynamic modelling mode.  Required if a subprogram gets part of its functionality from shared libraries.")
-        parser.add_argument('-X', '--link-static', action='store_true',
-                            help="Switches weldr to link the entire binary statically.  This may not be possible if a 3rd-party library is unavailable statically.")
-
+        parser.add_argument('--coverage', action='store_true', help="Compile with gcov enabled")
 
 class CompileStage(Stage):
     def __init__(self, args):
         super().__init__(args)
-        if self.args.use_dyn_models and self.args.link_static:
-            raise Exception("You can't use dynamic models and link the binary statically at the same time.  It doesn't make sense.")
         self.obj_regex = re.compile('\t(\S+\.(o|a|la))')
 
     @property
@@ -43,7 +40,10 @@ class CompileStage(Stage):
         # TODO: Test this.
         # When I looked at what the linker bit of GCC is actually doing, it spat out a monstrous amount of fedora-specific-looking stuff.
         # If we're trying to build outside of a GNU format, problematic.
-        self.exec('gcc', '-c', '-g', abs_dot, './main.c', '-o', 'main.o', cwd=self.working_dir)
+        for f in [ './main', './parse_args' ]:
+            src = '{:s}.c'.format(f)
+            obj = '{:s}.o'.format(f)
+            self.exec('gcc', '-c', '-g', abs_dot, src, '-o', obj, cwd=self.working_dir)
 
     def get_compile_cmd(self):
         if self.results.is_cpp:
@@ -51,8 +51,6 @@ class CompileStage(Stage):
         else:
             out = [ 'gcc' ]
 
-        if not self.args.use_dyn_models:
-            out.append('--static')
         return out
 
     def get_global_link_dirs(self):
@@ -188,6 +186,7 @@ class CompileStage(Stage):
         compile_cmd += self.get_wrap_cmds()
         self.l.info("Adding object files.")
         compile_cmd.append('{!s}'.format(pathlib.Path(self.working_dir, 'main.o')))
+        compile_cmd.append('{!s}'.format(pathlib.Path(self.working_dir, 'parse_args.o')))
         compile_cmd.append('-Wl,--start-group')
         compile_cmd += self.get_inst_static_objs()
         compile_cmd.append('-Wl,--end-group')
@@ -197,6 +196,8 @@ class CompileStage(Stage):
         compile_cmd += self.get_wrapper_libs()
         self.l.info("Adding stub library link commands.")
         compile_cmd += self.get_inst_stub_libs()
+        if self.args.coverage:
+            compile_cmd += ['-fprofile-arcs', '-ftest-coverage']
         compile_cmd += ['-o', 'run_me']
         self.l.info("Attempting to compile the whole darn thing.")
         compile_record = pathlib.Path(self.working_dir, "compile_all.log")

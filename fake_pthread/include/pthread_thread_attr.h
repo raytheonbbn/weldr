@@ -1,4 +1,9 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
+// This document does not contain technology or Technical Data controlled under either
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
 // This document does not contain technology or Technical Data controlled under either
 // the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
 #ifndef __PTHREAD_THREAD_ATTR_H__
@@ -81,7 +86,10 @@ int   fake_pthread_attr_setscope(pthread_attr_t *attrs, int new_scope);
 int   fake_pthread_attr_getstackaddr(const pthread_attr_t *attrs, void **cur_addr);
 int   fake_pthread_attr_setstackaddr(pthread_attr_t *attrs, void *new_addr);
 
-#define PTHREAD_STACK_MIN 65536
+// Thread stack size.
+// Defaults to four megabytes.
+// TODO: Unlike real threads, this doesn't grow at need.
+#define PTHREAD_STACK_MIN 0x400000
 
 //Get/set the stack size for this thread.
 //This defines the minimum size allowed for this thread's stack.

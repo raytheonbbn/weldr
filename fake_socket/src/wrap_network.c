@@ -1,6 +1,9 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
 #define _GNU_SOURCE
 #include "fake_socket.h"
 #include <stdlib.h>
@@ -20,9 +23,6 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-
-//Function pointer struct.  Gotta hate extern :p
-extern struct fd_control sock_ctl;
 
 //Function pointers to real library calls.
 int __real_socket(int domain, int type, int protocol);
@@ -48,9 +48,12 @@ ssize_t __real_send(int sockfd, const void *buf, size_t len, int flags);
 ssize_t __real_sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *addr, socklen_t addrlen);
 ssize_t __real_sendmsg(int sockfd, const struct msghdr *msg, int flags);
 
+extern struct fd_control sock_ctl;
+
 
 //Wrapper functions.
 int __wrap_socket(int domain, int type, int protocol) {
+    // Hack: Use the sign bit of the arguments to force a concrete call.
     void* args[] = { (void*)(long)domain, (void*)(long)type, (void*)(long)protocol };
 
     int fd = create_fake_fd(&sock_ctl, args);

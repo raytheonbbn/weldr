@@ -1,6 +1,9 @@
 # Copyright (c) 2020 Raytheon BBN Technologies, Inc.  All Rights Reserved.
+#
 # This document does not contain technology or Technical Data controlled under either
-# the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+# the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+#
+# Distribution A: Approved for Public Release, Distribution Unlimited
 import pathlib
 import re
 from ..argdef import ArgDef
@@ -53,7 +56,7 @@ class CreateInstancesStage(Stage):
         #Assign the command to a new instance.
         self.insts.setdefault(cmd, [])
         id_number = len(self.insts[cmd])
-        inst_id = "{:s}{:d}".format(cmd, id_number).replace(".", "_")
+        inst_id = "{:s}{:d}".format(cmd, id_number).replace(".", "_").replace('/', '_')
         self.insts[cmd].append(inst_id)
         self.inst_args[inst_id] = args
 
@@ -84,6 +87,7 @@ class CreateInstancesStage(Stage):
         for cmd in self.insts:
             for inst in self.insts[cmd]:
                 # Copy the instances
+                self.l.info("Creating instance {:s}".format(inst))
                 cmd_path = pathlib.Path(self.working_dir, cmd)
                 inst_path = pathlib.Path(self.working_dir, inst)
                 self.cp(cmd_path, inst_path)

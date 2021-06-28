@@ -1,14 +1,11 @@
 # Copyright (c) 2020 Raytheon BBN Technologies, Inc.  All Rights Reserved.
+#
 # This document does not contain technology or Technical Data controlled under either
-# the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+# the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+#
+# Distribution A: Approved for Public Release, Distribution Unlimited
 import pathlib
-from ..argdef import ArgDef
 from ..stage import Stage
-
-class InitArgs(ArgDef):
-    def add_args(self, parser):
-        parser.add_argument("-a", "--analyze", action="store_true",
-                            help="Instead of welding the projects, return reports on the linking environment required by each binary within the project.")
 
 class InitStage(Stage):
     def __init__(self, args):
@@ -20,7 +17,7 @@ class InitStage(Stage):
 
     @property
     def valid(self):
-        return not self.args.analyze
+        return True
 
     def run(self):
         self.l.info("Building all library models.")

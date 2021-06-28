@@ -1,9 +1,17 @@
 # Copyright (c) 2020 Raytheon BBN Technologies, Inc.  All Rights Reserved.
+#
 # This document does not contain technology or Technical Data controlled under either
-# the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+# the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+#
+# Distribution A: Approved for Public Release, Distribution Unlimited
 import pathlib
 import re
 from ..stage import Stage
+from ..argdef import ArgDef
+
+class MakeArgs(ArgDef):
+    def add_args(self, parser):
+        parser.add_argument('-R','--decon-file', action='store', help='Provide additional tokens to force deconflict with a file')
 
 class DeconflictSymbolsStage(Stage):
     def __init__(self, args):
@@ -263,16 +271,40 @@ class DeconflictSymbolsStage(Stage):
                 self.objdump_all(inst_dir)
 
     def deconflict_symbols(self):
+        stub_paths = self.results.cmd_stub_orderings
+        #regardless of libraries, main will always have to be deconflicted
+        force_list = ["main"]
+        #iterate over member programs' stub paths
+        for member in stub_paths:
+            #for each library imported by member program
+            for path in stub_paths[member]:
+                #grab each token from stub.conf, contains each symbol overridden
+                #by weldr
+                for token in (path / 'stub.conf').read_text().splitlines():
+                    force_list.append(token)
+        
+        #If a file containing tokens is supplied, check against those tokens too
+        if self.args.decon_file is not None:
+            if pathlib.Path(self.args.decon_file).is_file():
+                for token in open(self.args.decon_file,"r").read().splitlines():
+                    if token and not token.startswith('#'):
+                        force_list.append(token)
+            else:
+                #Missed the file, maybe we should bail here?
+                self.l.warn("Could not get decon file: {}, skipping...".format(self.args.decon_file))
+        
+        #remove duplicates
+        force_list = list(dict.fromkeys(force_list))
+
         for symbol in self.defined_syms_to_objs.keys():
             self.l.debug("Considering symbol {:s}".format(symbol)) 
             is_blacklist = symbol.startswith("__cxa")
-            is_main = symbol == "main"
             is_lib_init = symbol.startswith('fuse_init')
             is_lib_fini = symbol.startswith('fuse_fini')
             conflict = symbol in self.defined_syms_to_objs and len(self.defined_syms_to_objs[symbol]) > 1
             if is_blacklist:
                 continue
-            elif is_main or is_lib_init or is_lib_fini or conflict:
+            elif symbol in force_list or is_lib_init or is_lib_fini or conflict:
                 self.l.debug("Deconflicting symbol {:s}".format(symbol))
                 if self.check_cxx(symbol):
                     fmt = self.rename_cxx(symbol)

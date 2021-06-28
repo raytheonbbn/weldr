@@ -1,25 +1,42 @@
 // Copyright (c) 2019, Raytheon BBN Technologies, Inc. All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
 #include "fake_fd.h"
 
 struct fd_mgr mgr_of_fds;
 
 INIT_WRAPPER(fake_fd) {
+    // Initialilize the manager struct.
     return init_fd_mgr();
 }
 
 int init_fd_mgr() {
+    // Initialize the rwlocks for the fake fd and filebuf arrays.
     pthread_rwlock_init(&(mgr_of_fds.fd_lock), NULL);
     pthread_rwlock_init(&(mgr_of_fds.buf_lock), NULL);
 
+    // Zero out the indexes for next available structs. 
     mgr_of_fds.next_fd = 0;
     mgr_of_fds.next_buf = 0;
     return 0;
 }
 
 int create_fake_fd(struct fd_control* ctl,  void* impl_params[]) {
-    int fd = dup(1);
+    // Create a real file descriptor to back our fake file.
+    // This ensures our fd numbers won't collide with those of real fds.
+    //
+    // This is delegated to the specific fd implementation,
+    // in case it needs some specific features of the real system.
+    int fd = ctl->create_fd();
+    
+    if(fd < 0) {
+        // Somehow failed to create the stub FD.
+        // Return the error.
+        return fd;
+    }
     
     fake_fd* ffd = NULL;
 
@@ -30,6 +47,7 @@ int create_fake_fd(struct fd_control* ctl,  void* impl_params[]) {
         pthread_rwlock_unlock(&(mgr_of_fds.fd_lock));
         return -1;
     }
+    // Get the next available FFD pointer.
     ffd = mgr_of_fds.fds + mgr_of_fds.next_fd;
     mgr_of_fds.next_fd++;
 
@@ -39,7 +57,6 @@ int create_fake_fd(struct fd_control* ctl,  void* impl_params[]) {
     ffd->closed = 0;
 
     pthread_rwlock_unlock(&(mgr_of_fds.fd_lock));
-
 
     return fd;
 }
@@ -104,27 +121,30 @@ void output_target(const char* buf, char* target, size_t size) {
 }
 
 int fake_read(int fd, char* buf, ssize_t size) {
-
+    printf("Read(%d -> %p): attempting to read %ld bytes\n", fd, buf, size);
     fake_fd* ffd = get_fd_by_fd(fd);
     
-    struct fake_filebuf* fb = ffd->ctl->get_filebuf(ffd, 1);
-
+    struct fake_filebuf* fb = ffd->ctl->get_read_filebuf(ffd);
+    
     // We need to keep anyone else from mucking with the buffer.
     pthread_mutex_lock(&(fb->lock));
+    printf("Read(%d -> %p): locked buffer %p\n", fd, buf, fb);
      
     if(ffd->closed) {
-        //printf("FD %d is closed\n", fd);
+        printf("FD %d is closed\n", fd);
         //Turning this into a nuke; we should never hit this.
         exit(-1);
     }
     
     if(fb->len == 0) {
         //Wait for something to be readable.
+        printf("Read(%d -> %p): Waiting for data\n", fd, buf);
         pthread_cond_wait(&(fb->read_cond), &(fb->lock));
     }
+    printf("Read(%d -> %p): data available\n", fd, buf);
     
     if(ffd->closed) {
-        //printf("FD %d is closed\n", fd);
+        printf("FD %d is closed\n", fd);
         //Turning this into a nuke; we should never hit this.
         exit(-1);
     }
@@ -166,20 +186,23 @@ int fake_read(int fd, char* buf, ssize_t size) {
     }
 
     // Let someone else play now.
+    printf("Read(%d -> %p): unlocking buffer %p\n", fd, buf, fb);
     pthread_mutex_unlock(&(fb->lock));
 
-    printf("Read %d bytes from %d [Buf %p]\n", to_read, fd, fb);
+    printf("Read(%d -> %p): attempting to read %ld bytes\n", fd, buf, size);
 
     return to_read;
 }
 
 int fake_write(int fd, const char* buf, ssize_t size) {
+    printf("Write(%p -> %d): attempting to write %ld bytes\n", buf, fd, size);
 
     fake_fd* ffd = get_fd_by_fd(fd);
-    struct fake_filebuf* fb = ffd->ctl->get_filebuf(ffd, 0);
+    struct fake_filebuf* fb = ffd->ctl->get_write_filebuf(ffd);
 
     // We need to keep anyone else from mucking with the buffer.
     pthread_mutex_lock(&(fb->lock));
+    printf("Write(%p -> %d): locked buffer %p\n", buf, fd, fb);
 
     if(ffd->closed) {
         //printf("FD %d is closed\n", fd);
@@ -220,10 +243,10 @@ int fake_write(int fd, const char* buf, ssize_t size) {
 
     // Let waiting readers know they can read.
     pthread_cond_signal(&(fb->read_cond));
-
+    printf("Write(%p -> %d): unlocking buffer %p\n", buf, fd, fb);
     pthread_mutex_unlock(&(fb->lock));
+    printf("Write(%p -> %d): send %ld bytes\n", buf, fd, to_write);
 
-    printf("Wrote %d bytes to %d [Buf %p]\n", to_write, fd, fb);
 
     return to_write;
 }
@@ -231,9 +254,13 @@ int fake_write(int fd, const char* buf, ssize_t size) {
 int fake_close(int fd) {
     fake_fd* ffd = get_fd_by_fd(fd);
     ffd->closed=1;
-    struct fake_filebuf* buf_a = ffd->ctl->get_filebuf(ffd, 0);
-    struct fake_filebuf* buf_b = ffd->ctl->get_filebuf(ffd, 1);
-    pthread_mutex_unlock(&(buf_a->lock));
+    struct fake_filebuf* buf_a = ffd->ctl->get_write_filebuf(ffd);
+    struct fake_filebuf* buf_b = ffd->ctl->get_read_filebuf(ffd);
+    
+    if(buf_a != NULL ) {
+        pthread_mutex_unlock(&(buf_a->lock)); 
+    }
+
     if(buf_b != NULL && buf_a != buf_b) {
         pthread_mutex_unlock(&(buf_b->lock));
     }
@@ -241,34 +268,13 @@ int fake_close(int fd) {
     return 0;
 }
 
-
 int fake_flush(int fd) {
     //Do nothing; our buffer always "flushes",
     //because it's shared between both "processes".
     return 0;
 }
 
-int fake_fcntl_int(struct fake_fd* ffd, int cmd, int arg) {
-    switch(cmd) {
-#ifdef F_SETFL
-        case F_SETFL:
-            printf("Setting flags of fd %d to %x", ffd->fd, arg);
-            ffd->flags = arg;
-            return 0;
-#endif
-        default:
-            return 0;
-    }
-}
-
-int fake_fcntl_void(struct fake_fd* ffd, int cmd) {
-    switch(cmd) {
-#ifdef F_SETFL
-        case F_SETFL:
-            return ffd->flags;
-            break;
-#endif
-        default:
-            return 0;
-    }
+// Handler functions for the fd_control struct.
+int create_basic_fd() {
+    return dup(1);
 }

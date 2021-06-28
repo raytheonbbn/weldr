@@ -1,10 +1,14 @@
 # Copyright (c) 2020 Raytheon BBN Technologies, Inc.  All Rights Reserved.
+#
 # This document does not contain technology or Technical Data controlled under either
-# the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+# the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+#
+# Distribution A: Approved for Public Release, Distribution Unlimited
 import logging
 import pickle
 import subprocess
 import sys
+import timeit
 from collections import Counter
 from functools import reduce
 from importlib import import_module
@@ -170,15 +174,19 @@ class Driver:
 
     def run(self):
         self.load_stages()
+        times = dict()
         for stage in self.stages:
             self.update_working_dir(stage)
             try:
-                stage.start(self.results)
+                t = timeit.timeit(lambda: stage.start(self.results), number=1);
+                times[stage.name] = t;
             except Exception as e:
                 self.l.exception("Exception while running {:s}".format(stage.name))
                 return 1
             if stage.terminal:
                 break
         self.l.info("SUCCESS!")
+        for (k, v) in times.items():
+            self.l.info("Time for {:s}: {!s}".format(k, v));
         return 0
         

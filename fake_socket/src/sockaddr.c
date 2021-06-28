@@ -1,6 +1,9 @@
 // Copyright (c) 2020 Raytheon BBN Technologies, Inc.  All Rights Reserved.
+//
 // This document does not contain technology or Technical Data controlled under either
-// the  U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+// the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+//
+// Distribution A: Approved for Public Release, Distribution Unlimited
 #include "sockaddr.h"
 
 void inet6_to_long(const struct sockaddr_in6* addr, uint64_t* msb, uint64_t* lsb) {

@@ -24,3 +24,11 @@ The illusion of network comms is achieved using concurrency control.  In keeping
 
 - **mgr\_for\_socks:** This is the global instance of sock\_mgr.
 - **sock\_ctl:** This is the global instance of fd\_control defining the interface between the file descriptor and socket models.
+
+----------
+Copyright (c) Raytheon BBN Technologies 2021, All Rights Reserved
+
+This document does not contain technology or Technical Data controlled under either
+the U.S. International Traffic in Arms Regulations or the U.S. Export Administration
+
+Distribution A: Approved for Public Release, Distribution Unlimited
